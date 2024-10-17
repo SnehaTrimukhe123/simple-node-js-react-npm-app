@@ -3,8 +3,9 @@ pipeline {
     environment {
         AWS_ACCOUNT_ID = '481665085317'
         AWS_DEFAULT_REGION = 'ap-south-1'
-        ECR_REPO_NAME = 'nodejs-react-app' // replace with your ECR repository name
+        ECR_REPO_NAME = 'nodejs-react-app'
         IMAGE_TAG = 'latest'
+        ECR_IMAGE = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${ECR_REPO_NAME}:${IMAGE_TAG}"
         AWS_ACCESS_KEY_ID = credentials('aws-access-key')
         AWS_SECRET_ACCESS_KEY = credentials('aws-secret-key')
         EMAIL = 'snehatrimukhe12@gmail.com'
@@ -34,16 +35,12 @@ pipeline {
         }
         stage('Build Docker Image') {
             steps {
-                sh """
-                docker build -t ${ECR_IMAGE} .
-                """
+                sh "docker build -t ${ECR_IMAGE} ."
             }
         }
         stage('Push Docker Image to ECR') {
             steps {
-                sh """
-                docker push ${ECR_IMAGE}
-                """
+                sh "docker push ${ECR_IMAGE}"
             }
         }
     }
