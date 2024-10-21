@@ -1,59 +1,76 @@
 pipeline {
     agent any
-    environment {
-        AWS_ACCOUNT_ID = '481665085317'
-        AWS_DEFAULT_REGION = 'ap-south-1'
-        ECR_REPO_NAME = 'nodejs-react-app'
-        IMAGE_TAG = 'latest'
-        ECR_IMAGE = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${ECR_REPO_NAME}:${IMAGE_TAG}"
-        AWS_ACCESS_KEY_ID = credentials('aws-access-key')
-        AWS_SECRET_ACCESS_KEY = credentials('aws-secret-key')
-        EMAIL = 'snehatrimukhe12@gmail.com'
-    }
+
     stages {
         stage('Clone Repository') {
             steps {
                 git 'https://github.com/jenkins-docs/simple-node-js-react-npm-app.git'
             }
         }
-        stage('Build') {
+
+        stage('Install Dependencies') {
             steps {
                 sh 'npm install'
-                sh 'npm run build'
+                sh 'npm audit fix || true'  // Fix vulnerabilities without failing the build
             }
         }
-        stage('Login to ECR') {
+
+        stage('Test') {
+            steps {
+                sh 'npm test'
+            }
+        }
+
+        stage('Create Dockerfile') {
+            steps {
+                writeFile file: 'Dockerfile', text: '''
+                # Use the latest Node.js LTS version
+                FROM node:18
+
+                # Set the working directory
+                WORKDIR /app
+
+                # Copy the package.json and package-lock.json files
+                COPY package*.json ./
+
+                # Install app dependencies
+                RUN npm install
+
+                # Copy the rest of the application code
+                COPY . .
+
+                # Expose the port the app runs on
+                EXPOSE 3000
+
+                # Command to run the application
+                CMD ["npm", "start"]
+                '''
+            }
+        }
+
+        stage('Build Docker Image') {
             steps {
                 script {
-                    withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: 'aws-credentials']]) {
-                        sh """
-                        aws ecr get-login-password --region ${AWS_DEFAULT_REGION} | docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com
-                        """
+                    def dockerImage = docker.build("your-docker-repo/nodejs-app:latest")
+                }
+            }
+        }
+
+        stage('Push Docker Image') {
+            steps {
+                script {
+                    docker.withRegistry('https://your-docker-repo-url', 'docker-credentials-id') {
+                        dockerImage.push()
                     }
                 }
             }
         }
-        stage('Build Docker Image') {
-            steps {
-                sh "docker build -t ${ECR_IMAGE} ."
-            }
-        }
-        stage('Push Docker Image to ECR') {
-            steps {
-                sh "docker push ${ECR_IMAGE}"
-            }
-        }
     }
+
     post {
-        success {
-            mail to: "${EMAIL}",
-                 subject: "Jenkins Job '${env.JOB_NAME}' (Build #${env.BUILD_NUMBER}) - Success",
-                 body: "Job '${env.JOB_NAME}' has successfully completed."
-        }
-        failure {
-            mail to: "${EMAIL}",
-                 subject: "Jenkins Job '${env.JOB_NAME}' (Build #${env.BUILD_NUMBER}) - Failure",
-                 body: "Job '${env.JOB_NAME}' has failed."
+        always {
+            cleanWs()  // Clean up the workspace after the build
         }
     }
 }
+
